@@ -43,7 +43,10 @@ d="${FLUX_DATA_DIR}"
 c="$(flux_cluster_dir)"
 
 rm -f "${FLUX_RESTART_MARKER}"
-mkdir -p "${s}" "${d}" "${FLUX_DIR}"
+mkdir -p "${s}" "${d}" "${FLUX_DIR}" "$(dirname "${FLUX_LOG}")"
+# An older image kept flux.log on the synced data volume: move it here, once.
+flux_log_migrate "${FLUX_DIR}/flux.log"
+flux_banner "Don't Starve Together"
 
 caves=0
 flux_caves_enabled "${DST_CAVES:-}" && caves=1
@@ -314,6 +317,7 @@ start_generation() {
   [ "${terminating}" = "1" ] && return 2
 
   write_state starting "The world is loading."
+  flux_banner "Don't Starve Together"
   flux_log "starting the cluster (generation ${generation}): ${shards[*]}"
   for sh in "${shards[@]}"; do start_shard "${sh}"; done
   helpers=()

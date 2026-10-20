@@ -20,8 +20,8 @@ container**, linked over the loopback, under a supervisor that:
 
 | Path | Flux mount | What |
 |---|---|---|
-| `/mnt/dst/data` | `g:` (synced) | the persistent storage root: `Cluster_1/` (cluster.ini, the token, both shards' worlds and settings, admin/white/block lists) and `flux/` (our log, state, backups, the hub's files) |
-| `/mnt/dst/server` | `ml:server` (local) | the game install, about 4.3 GB, and the Workshop mods (`ugc_mods/`). Downloaded again on a new node |
+| `/mnt/dst/data` | `g:` (synced) | the persistent storage root: `Cluster_1/` (cluster.ini, the token, both shards' worlds and settings, admin/white/block lists) and `flux/` (state, backups, the hub's files) |
+| `/mnt/dst/server` | `ml:server` (local) | the game install, about 4.3 GB, and the Workshop mods (`ugc_mods/`), downloaded again on a new node; also `flux-logs/flux.log`, our supervisor log (5 MB, then one `.1`): local, never synced |
 
 Spec: `g:/mnt/dst/data|ml:server:/mnt/dst/server`.
 
@@ -134,4 +134,9 @@ docker run --rm -e FLUX_OFFLINE=true -v dst-install:/mnt/dst/server -v dst-data:
 
 ## Versions
 
+- **1.0.1** (2026-10-20): `flux.log` moved off the synced data volume to `/mnt/dst/server/flux-logs/flux.log`
+  (5 MB, one `.1`; an old one is moved there once); start-up banner at the container start and on
+  every generation; built on the base pinned by digest with Ubuntu's pending updates applied; the
+  Monday CI run publishes only when it has something to apply (urgent security updates, or commits
+  touching the image inputs that are not published yet: `.github/ci/needs-rebuild.sh`).
 - **1.0.0** (2026-10-10): first version.

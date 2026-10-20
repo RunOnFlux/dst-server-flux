@@ -57,3 +57,5 @@ A change to what the image does bumps `VERSION` and gets a line under "Versions"
 - **Flux stops a container with Docker's default 10 seconds.** Both shards' saves: 3.8 s measured.
 - **The unit tests run with the machine's Python and skip the Lua ones without lua5.1.** The image
   test runs them all with the image's Python and Lua.
+- **`flux.log` is local** (`$FLUX_SERVER_DIR/flux-logs/flux.log`, the `ml:` install volume; 5 MB then one `.1`), never on the synced data volume: a constantly written file there is constant Syncthing traffic. `flux_log_migrate` moves an old `data/flux/flux.log` off at start; `flux_banner` prints the FluxCloud banner at container start and every generation (text tested). `state.json` and the backups stay in `data/flux/`, which the entrypoint creates itself.
+- **The scheduled CI run publishes only with something to apply** (`.github/ci/needs-rebuild.sh`): urgent security updates, or commits on main since the published `:latest` (label `org.opencontainers.image.revision`) that touch the image inputs; anything else waits for the first Monday of the month.

@@ -202,6 +202,14 @@ check "and installs the new build" "0" "$(status grep -q 'installing build 101' 
 check "a planned restart is not a crash" "1" "$(status grep -q 'restarts within' /tmp/entry.out)"
 kill -TERM "${entry}"; wait "${entry}"
 
+# --- flux.log is local; the banner ----------------------------------------------------------------
+fl="${FLUX_SERVER_DIR}/flux-logs/flux.log"
+check "flux.log is on the install volume" "0" "$(status test -s "${fl}")"
+check "and not on the synced data volume" "1" "$(status test -e "${d}/flux/flux.log")"
+check "the banner is in the container output" "0" "$(status grep -q "Don't Starve Together server image by FluxCloud - https://runonflux.com" /tmp/entry.out)"
+check "and in flux.log" "0" "$(status grep -q 'Host this and 30+ other games in one click: https://runonflux.com/games' "${fl}")"
+check "at the container start and again for each generation" "1" "$([ "$(grep -c 'server image by FluxCloud' /tmp/entry.out)" -ge 2 ] && echo 1 || echo 0)"
+
 printf '%s passed, %s failed\n' "${pass}" "${fail}"
 [ "${fail}" = "0" ] || { echo "--- entrypoint output"; tail -40 /tmp/entry.out; }
 [ "${fail}" = "0" ]
