@@ -83,8 +83,19 @@ Commands, run through appexec. Each prints one JSON document.
 | `flux-console [--caves] <lua>` | one line of Lua into a shard's console, and what it printed. A bare word gets `()`: `flux-console c_save` |
 
 `flux/world.json` and `flux/mods.json` are the hub's: while one exists the image writes
-`worldgenoverride.lua` / `modoverrides.lua` from it on every start. Delete it to manage the Lua
-file by hand. `flux/mods-installed.json` and `flux/world-options.json` are refreshed after every
+`worldgenoverride.lua` / `modoverrides.lua` from it on every start. **`DST_PLAYSTYLE` does the same
+for the worlds, with no `world.json` at all, and the hub always sets it**: a server deployed from
+the hub has both `worldgenoverride.lua` files rewritten at every start, so a hand edit never
+survives. To keep the Lua files by hand, delete `flux/world.json` AND leave `DST_PLAYSTYLE` unset
+(the hub's form cannot do that; the World Settings tab is the way for those servers).
+`flux-dst world` reports `writes_files` for exactly this: `managed` only says whether
+`flux/world.json` exists.
+
+**Reading the hub's commands through appexec:** FluxOS's appexec loses data once an answer passes
+32 KiB (a 105 KB `flux-dst world` came back with one 32 768-byte chunk missing, intermittently).
+The hub reads `world` and `mods` through a temporary file in base64 slices of 20 000 bytes
+(`src/utils/appExecLarge.js`), which needs nothing from the image. A new command whose answer can
+grow past 32 KiB must be read that way. `flux/mods-installed.json` and `flux/world-options.json` are refreshed after every
 start (the options only when the game build changed).
 
 Useful console commands: `c_announce("text")`, `c_save()`, `c_rollback(1)` (back one save, up to
@@ -134,6 +145,9 @@ docker run --rm -e FLUX_OFFLINE=true -v dst-install:/mnt/dst/server -v dst-data:
 
 ## Versions
 
+- **1.0.2** (2026-11-06): `flux-dst world` reports `writes_files` (true whenever a play style is
+  set, by `flux/world.json` or `DST_PLAYSTYLE`), because `managed: false` made a server whose files
+  are rewritten at every start look hand-managed; README says so and documents appexec's 32 KiB loss.
 - **1.0.1** (2026-10-20): `flux.log` moved off the synced data volume to `/mnt/dst/server/flux-logs/flux.log`
   (5 MB, one `.1`; an old one is moved there once); start-up banner at the container start and on
   every generation; built on the base pinned by digest with Ubuntu's pending updates applied; the

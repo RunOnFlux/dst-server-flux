@@ -1016,10 +1016,15 @@ def cmd_set_mods(raw):
 
 
 def current_world():
+    """What the hub shows. `managed` means flux/world.json exists (the owner's saved choices);
+    `writes_files` is the one that decides the owner's hand edits: it is true whenever a play style
+    is set, by world.json OR by DST_PLAYSTYLE (the hub always sets it), and then both
+    worldgenoverride.lua files are rewritten at every start."""
     world = read_json(WORLD_JSON)
+    writes = playstyle() is not None
     if isinstance(world, dict):
-        return {"managed": True, "playstyle": playstyle(), "forest": world.get("forest") or {}, "cave": world.get("cave") or {}}
-    out = {"managed": False, "playstyle": playstyle()}
+        return {"managed": True, "writes_files": writes, "playstyle": playstyle(), "forest": world.get("forest") or {}, "cave": world.get("cave") or {}}
+    out = {"managed": False, "writes_files": writes, "playstyle": playstyle()}
     for shard, loc in (("Master", "forest"), ("Caves", "cave")):
         t = lua_read("table", os.path.join(CLUSTER_DIR, shard, "worldgenoverride.lua"))
         out[loc] = (t or {}).get("overrides") or {}

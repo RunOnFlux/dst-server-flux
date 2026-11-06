@@ -189,6 +189,27 @@ class Worlds(Base):
         self.assertNotIn("hunger", caves, "play style settings the caves do not have are left out")
         self.assertIn("bad = x is not an option", out)
 
+    def test_world_says_whether_the_files_are_written(self):
+        # The hub always sets DST_PLAYSTYLE: no world.json, yet both files are rewritten at every start.
+        rc, out, _ = self.run_cmd({"DST_PLAYSTYLE": "endless"}, "world")
+        cfg = json.loads(out)["config"]
+        self.assertEqual((rc, cfg["managed"], cfg["writes_files"], cfg["playstyle"]), (0, False, True, "endless"))
+        rc, out, _ = self.run_cmd({}, "world")
+        cfg = json.loads(out)["config"]
+        self.assertEqual((cfg["managed"], cfg["writes_files"], cfg["playstyle"]), (False, False, None))
+        self.write("flux/world.json", json.dumps({"playstyle": "relaxed", "forest": {}, "cave": {}}))
+        cfg = json.loads(self.run_cmd({}, "world")[1])["config"]
+        self.assertEqual((cfg["managed"], cfg["writes_files"]), (True, True))
+
+    def test_env_play_style_rewrites_a_hand_edited_file_at_every_start(self):
+        self.run_cmd({"FLUX_OFFLINE": "true", "DST_PLAYSTYLE": "endless"}, "apply")
+        self.write("Cluster_1/Master/worldgenoverride.lua", "return { mine = true }\n")
+        self.run_cmd({"FLUX_OFFLINE": "true", "DST_PLAYSTYLE": "endless"}, "apply")
+        self.assertNotIn("mine", self.read("Master", "worldgenoverride.lua"))
+        self.write("Cluster_1/Master/worldgenoverride.lua", "return { mine = true }\n")
+        self.run_cmd({"FLUX_OFFLINE": "true"}, "apply")
+        self.assertEqual(self.read("Master", "worldgenoverride.lua"), "return { mine = true }\n", "no play style at all: the owner's file stays")
+
     def test_set_world_validates(self):
         rc, out, _ = self.run_cmd({}, "set-world", json.dumps({"playstyle": "hard", "forest": {"a b": "c"}}))
         self.assertEqual(rc, 2)
