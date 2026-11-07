@@ -166,6 +166,37 @@ flux_restart_counts() {
   esac
 }
 
+# $1 = FLUX_RESTART_TIME ("HH:MM", 24 hour). Prints the minute of the day, or fails for empty
+# (no scheduled restart) and for anything that is not a time of day.
+flux_restart_minute_of_day() {
+  local value="$1" h m
+  [[ "${value}" =~ ^([0-9]{1,2}):([0-9]{2})$ ]] || return 1
+  h=$((10#${BASH_REMATCH[1]}))
+  m=$((10#${BASH_REMATCH[2]}))
+  [ "${h}" -le 23 ] && [ "${m}" -le 59 ] || return 1
+  printf '%s' $((h * 60 + m))
+}
+
+# $1 = minute of the day the restart is set for, $2 = the current minute of the day,
+# $3 = the current second of that minute. Prints how many seconds until the next restart. A
+# restart due this very minute is tomorrow's: a cluster that restarts at 05:00 and is back up at
+# 05:00:40 must not restart again.
+flux_seconds_until() {
+  local target="$1" now_min="$2" now_sec="${3:-0}" delta
+  delta=$(((target - now_min) * 60 - now_sec))
+  [ "${delta}" -le 0 ] && delta=$((delta + 86400))
+  printf '%s' "${delta}"
+}
+
+# $1 = the warning the owner asked for, in minutes. Prints it clamped to 0..30 (5 when unusable).
+flux_warn_minutes() {
+  local value="${1:-5}"
+  [[ "${value}" =~ ^[0-9]+$ ]] || value=5
+  value=$((10#${value}))
+  [ "${value}" -gt 30 ] && value=30
+  printf '%s' "${value}"
+}
+
 # $1 = number to keep, then the files NEWEST FIRST. Prints the ones to delete.
 flux_files_to_prune() {
   local keep="$1" i=0 f

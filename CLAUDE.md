@@ -28,7 +28,7 @@ A change to what the image does bumps `VERSION` and gets a line under "Versions"
 ## The files
 
 - `scripts/flux-entrypoint.sh`: PID 1. Per generation: SteamCMD update, migration, `fluxdst.py
-  apply`, backup, both shards on their FIFOs, then the watchers (token, ready, updates, backups).
+  apply`, backup, both shards on their FIFOs, then the watchers (token, ready, updates, backups, and the daily `restart_schedule`).
 - `scripts/fluxdst.py`: every decision about the server's files (cluster.ini, server.ini, token,
   admins, worldgenoverride.lua, modoverrides.lua, the mods setup file, migration) and the hub's
   commands (`flux-dst status|mods|set-mods|world|set-world`). The one place those rules live.
@@ -58,4 +58,5 @@ A change to what the image does bumps `VERSION` and gets a line under "Versions"
 - **The unit tests run with the machine's Python and skip the Lua ones without lua5.1.** The image
   test runs them all with the image's Python and Lua.
 - **`flux.log` is local** (`$FLUX_SERVER_DIR/flux-logs/flux.log`, the `ml:` install volume; 5 MB then one `.1`), never on the synced data volume: a constantly written file there is constant Syncthing traffic. `flux_log_migrate` moves an old `data/flux/flux.log` off at start; `flux_banner` prints the FluxCloud banner at container start and every generation (text tested). `state.json` and the backups stay in `data/flux/`, which the entrypoint creates itself.
+- **The scheduled restart (`FLUX_RESTART_TIME`, 1.0.3) writes the marker as `planned: scheduled restart at HH:MM`.** `flux_restart_counts` only exempts lines starting with `planned`/`requested`; any other text counts as a crash against the restart budget. Empty or unset = off, and the hub's Deployment Settings card relies on that.
 - **The scheduled CI run publishes only with something to apply** (`.github/ci/needs-rebuild.sh`): urgent security updates, or commits on main since the published `:latest` (label `org.opencontainers.image.revision`) that touch the image inputs; anything else waits for the first Monday of the month.

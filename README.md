@@ -61,7 +61,7 @@ the file's own value. Names in brackets are the previous image's, still read.
 | `DST_VOTE_ENABLED`, `DST_WHITELIST_SLOTS`, `DST_TICK_RATE`, `DST_MAX_SNAPSHOTS`, `DST_STEAM_GROUP_ID`, `DST_STEAM_GROUP_ONLY`, `DST_STEAM_GROUP_ADMINS` | the same keys | |
 
 Supervisor knobs: `FLUX_BACKUP_HOURS` (6), `FLUX_BACKUP_KEEP` (5), `FLUX_UPDATE_CHECK_MINUTES` (30, 0 = off),
-`FLUX_UPDATE_GRACE_MINUTES` (5), `FLUX_TOKEN_RETRY_MINUTES` (15), `FLUX_RESTART_MAX_ATTEMPTS` (5 in
+`FLUX_UPDATE_GRACE_MINUTES` (5), `FLUX_RESTART_TIME` ("HH:MM" in `TZ`, empty = no scheduled restart), `FLUX_RESTART_WARN_MINUTES` (5, 0..30), `FLUX_TOKEN_RETRY_MINUTES` (15), `FLUX_RESTART_MAX_ATTEMPTS` (5 in
 `FLUX_RESTART_WINDOW` 3600 s, then exit 42), `SKIP_UPDATE`, `FLUX_OFFLINE` (local tests: an offline
 cluster, no token needed).
 
@@ -145,6 +145,10 @@ docker run --rm -e FLUX_OFFLINE=true -v dst-install:/mnt/dst/server -v dst-data:
 
 ## Versions
 
+- **1.0.3** (2026-11-07): a daily scheduled restart, `FLUX_RESTART_TIME` ("HH:MM" in `TZ`; empty or unset = off, so
+  existing servers do not change). Players are warned with `c_announce` `FLUX_RESTART_WARN_MINUTES` (5) before and again one
+  minute before; both worlds are saved and the next start updates from Steam. It is a planned restart, not counted
+  against the crash budget.
 - **1.0.2** (2026-11-06): `flux-dst world` reports `writes_files` (true whenever a play style is
   set, by `flux/world.json` or `DST_PLAYSTYLE`), because `managed: false` made a server whose files
   are rewritten at every start look hand-managed; README says so and documents appexec's 32 KiB loss.

@@ -237,6 +237,65 @@ announce() {
 }
 
 # shellcheck disable=SC2329  # run in the background below
+# The daily restart, one per generation. FLUX_RESTART_TIME ("HH:MM", 24 hour, in TZ); empty or
+# unset = no scheduled restart. FLUX_RESTART_WARN_MINUTES (0..30, default 5) is how long before it
+# the players are warned with c_announce, and again one minute before. The restart is the same
+# save-and-stop as any planned one (SIGTERM saves both shards); the next generation then updates
+# from Steam. Players online do not postpone it: they were warned.
+restart_schedule() {
+  local target warn due now_h now_m now_s
+  target="$(flux_restart_minute_of_day "${FLUX_RESTART_TIME:-}")" || {
+    [ -n "${FLUX_RESTART_TIME:-}" ] && flux_log "WARN FLUX_RESTART_TIME='${FLUX_RESTART_TIME}' is not HH:MM; no scheduled restart"
+    exit 0
+  }
+  warn="$(flux_warn_minutes "${FLUX_RESTART_WARN_MINUTES:-5}")"
+  # The restart as an absolute time, computed once, so the countdown cannot roll over to tomorrow
+  # halfway through.
+  IFS=: read -r now_h now_m now_s <<<"$(date +%H:%M:%S)"
+  due=$(($(date +%s) + $(flux_seconds_until "${target}" $((10#${now_h} * 60 + 10#${now_m})) $((10#${now_s})))))
+  flux_log "scheduled restart at ${FLUX_RESTART_TIME} (${TZ:-UTC}), in $(((due - $(date +%s)) / 60)) minutes, with a ${warn} minute warning"
+
+  # Sleeps until $1 seconds before the restart, in steps of at most five minutes so a clock that
+  # moves is noticed.
+  sleep_until_before() {
+    local left
+    while :; do
+      left=$((due - $1 - $(date +%s)))
+      [ "${left}" -le 0 ] && return 0
+      sleep $((left > 300 ? 300 : left))
+    done
+  }
+  warn_players() {
+    local minutes="$1" unit="minutes"
+    [ "${minutes}" = "1" ] && unit="minute"
+    announce "Scheduled restart in ${minutes} ${unit}. The world is saved."
+    flux_log "players warned: restart in ${minutes} ${unit}"
+  }
+
+  sleep_until_before $((warn * 60))
+  if [ "${warn}" -gt 0 ]; then
+    warn_players $(((due - $(date +%s) + 59) / 60))
+    if [ $((due - $(date +%s))) -gt 90 ]; then
+      sleep_until_before 60
+      warn_players 1
+    fi
+  fi
+  sleep_until_before 0
+
+  if [ -f "${FLUX_RESTART_MARKER}" ]; then
+    flux_log "scheduled restart due, but the cluster is already being restarted ($(cat "${FLUX_RESTART_MARKER}" 2>/dev/null))"
+    exit 0
+  fi
+  if [ -z "$(flux_shard_pid Master)" ]; then
+    flux_log "scheduled restart due, but the server is not running; nothing to restart"
+    exit 0
+  fi
+  # "planned:" so the supervisor does not count it against the restart budget.
+  printf 'planned: scheduled restart at %s' "${FLUX_RESTART_TIME}" >"${FLUX_RESTART_MARKER}"
+  flux_log "scheduled restart: saving both worlds and restarting"
+}
+
+# shellcheck disable=SC2329  # run in the background below
 # A newer game build, or a newer version of an installed Workshop mod: players cannot join a
 # server that is behind (the game: "server outdated", the server is hidden; a mod: a version
 # mismatch on join). The restart updates both.
@@ -324,6 +383,7 @@ start_generation() {
   token_watch & helpers+=($!)
   ready_watch & helpers+=($!)
   update_watch & helpers+=($!)
+  restart_schedule & helpers+=($!)
   backupper & helpers+=($!)
   return 0
 }

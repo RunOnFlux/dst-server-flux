@@ -202,6 +202,24 @@ check "and installs the new build" "0" "$(status grep -q 'installing build 101' 
 check "a planned restart is not a crash" "1" "$(status grep -q 'restarts within' /tmp/entry.out)"
 kill -TERM "${entry}"; wait "${entry}"
 
+check "no FLUX_RESTART_TIME: no scheduled restart" "1" "$(status grep -q 'scheduled restart' /tmp/entry.out)"
+
+# 7. A scheduled restart: due within the next two minutes, warned a minute before, a planned
+#    restart (not a crash) that saves and comes back in place.
+rm -rf /tmp/t
+echo 100 >/tmp/fake-latest-build
+at="$(date -d '+1 minute' +%H:%M)"
+FLUX_OFFLINE=true FLUX_RESTART_TIME="${at}" FLUX_RESTART_WARN_MINUTES=1 start
+wait_for 'grep -q "the cluster is up" /tmp/entry.out' 30
+wait_for 'grep -q "generation 2" /tmp/entry.out' 150
+check "the scheduler announces itself" "0" "$(status grep -q "scheduled restart at ${at}" /tmp/entry.out)"
+check "players are warned" "0" "$(status grep -q 'players warned: restart in' /tmp/entry.out)"
+check "the restart is planned" "0" "$(status grep -q "planned: scheduled restart at ${at}" /tmp/entry.out)"
+check "a scheduled restart is not a crash" "1" "$(status grep -q 'restarts within' /tmp/entry.out)"
+wait_for 'grep -c "the cluster is up" /tmp/entry.out | grep -q 2' 30
+check "both shards are back" "2" "$(pgrep -fc '^\./dontstarve_dedicated_server_nullrenderer_x64')"
+kill -TERM "${entry}"; wait "${entry}"
+
 # --- flux.log is local; the banner ----------------------------------------------------------------
 fl="${FLUX_SERVER_DIR}/flux-logs/flux.log"
 check "flux.log is on the install volume" "0" "$(status test -s "${fl}")"
