@@ -137,6 +137,7 @@ update_server() {
   # A stop in the middle of a fresh install leaves the old build's record only as .pre-fresh.
   [ ! -f "${acf}" ] && [ -f "${acf}.pre-fresh" ] && [ -x "${s}/bin64/${FLUX_GAME_BIN}" ] && cp -f "${acf}.pre-fresh" "${acf}"
   for attempt in 1 2 3 4 5; do
+    [ "${terminating}" = "1" ] && return 1
     # The platform has to be named: without it, an anonymous install of 343050 fails with
     # "Missing configuration" (measured, steamcmd/steamcmd:ubuntu-24).
     # shellcheck disable=SC2086  # validate is "" or "validate"
@@ -177,7 +178,8 @@ update_server() {
       validate="validate"
     fi
     flux_log "WARN steamcmd failed (attempt ${attempt}/5); retrying in 5s${validate:+ with validate}"
-    sleep 5
+    sleep 5 &
+    wait $!
   done
   # The fresh install did not finish: put the old build's record back.
   [ "${fresh}" = "1" ] && [ -f "${acf}.pre-fresh" ] && cp -f "${acf}.pre-fresh" "${acf}"

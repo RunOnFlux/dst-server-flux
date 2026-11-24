@@ -69,6 +69,8 @@ if [ -e /tmp/fake-0x6 ] && [ -f "${dir}/steamapps/appmanifest_343050.acf" ]; the
   echo "Error! App '343050' state is 0x6 after update job."
   exit "$(cat /tmp/fake-0x6)"
 fi
+echo "steamcmd: starting"
+if [ -e /tmp/fake-fail-once ]; then rm -f /tmp/fake-fail-once; echo "steamcmd: failing once"; exit 1; fi
 [ -e /tmp/fake-slow ] && sleep 30
 echo "steamcmd: installing build ${build}"
 mkdir -p "${dir}/bin64" "${dir}/steamapps" "${dir}/mods"
@@ -265,14 +267,28 @@ kill -TERM "${entry}"
 wait "${entry}"
 rc=$?
 check "a stop during the update ends the container with 0" "0" "${rc}"
+check "SteamCMD's output reached the container's output while it was still running" "0" "$(status grep -q 'steamcmd: starting' /tmp/entry.out)"
 check "and is logged as a stop, not as an error" "0" "$(status grep -q 'stopped on request before the server started' /tmp/entry.out)"
 check "the container did not end with 42" "1" "$(status grep -q 'ending the container (42)' /tmp/entry.out)"
 rm -f /tmp/fake-slow
 pkill -f "sleep 30" 2>/dev/null
+# a stop during the pause between two attempts must not start another SteamCMD run
+rm -rf /tmp/t
+touch /tmp/fake-fail-once /tmp/fake-slow
+FLUX_OFFLINE=true DST_NAME="Test" start
+wait_for 'grep -q "retrying in 5s" /tmp/entry.out' 20
+t0="$(date +%s)"
+kill -TERM "${entry}"
+wait "${entry}"
+check "a stop between two attempts ends the container with 0" "0" "$?"
+check "quickly, without a second SteamCMD run" "0" "$(status test $(($(date +%s) - t0)) -lt 4)"
+check "(one 'steamcmd: starting' in the output)" "1" "$(grep -c 'steamcmd: starting' /tmp/entry.out)"
+rm -f /tmp/fake-slow /tmp/fake-fail-once
+pkill -f "sleep 30" 2>/dev/null
 rm -rf /tmp/t
 FLUX_OFFLINE=true DST_NAME="Test" start
 wait_for 'grep -q "the cluster is up" /tmp/entry.out' 30
-check "SteamCMD's output is in the container's output" "0" "$(status grep -q 'steamcmd: installing build' /tmp/entry.out)"
+check "SteamCMD's whole output is in the container's output" "0" "$(status grep -q 'steamcmd: installing build' /tmp/entry.out)"
 kill -TERM "${entry}"; wait "${entry}"
 
 # --- flux.log is local; the banner ----------------------------------------------------------------
