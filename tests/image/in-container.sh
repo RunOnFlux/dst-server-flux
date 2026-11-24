@@ -64,6 +64,11 @@ if [ "${info}" = "1" ]; then
   exit 0
 fi
 [ -n "${dir}" ] || exit 0
+# /tmp/fake-0x6: Steam refuses the installed build's old manifests while its record (the acf) exists
+if [ -e /tmp/fake-0x6 ] && [ -f "${dir}/steamapps/appmanifest_343050.acf" ]; then
+  echo "Error! App '343050' state is 0x6 after update job."
+  exit 8
+fi
 echo "steamcmd: installing build ${build}"
 mkdir -p "${dir}/bin64" "${dir}/steamapps" "${dir}/mods"
 echo 756039 >"${dir}/version.txt"
@@ -219,6 +224,23 @@ check "a scheduled restart is not a crash" "1" "$(status grep -q 'restarts withi
 wait_for 'grep -c "the cluster is up" /tmp/entry.out | grep -q 2' 30
 check "both shards are back" "2" "$(pgrep -fc '^\./dontstarve_dedicated_server_nullrenderer_x64')"
 kill -TERM "${entry}"; wait "${entry}"
+
+# 5. Steam refuses the installed build's manifests (0x6): the record is set aside, the install runs as a new
+# one, the server starts, and the depotcache lives on the install volume.
+rm -rf /tmp/t
+FLUX_OFFLINE=true DST_NAME="Test" start
+wait_for 'grep -c "the cluster is up" /tmp/entry.out | grep -q 1' 30
+kill -TERM "${entry}"; wait "${entry}"
+touch /tmp/fake-0x6
+echo 101 >/tmp/fake-latest-build
+FLUX_OFFLINE=true DST_NAME="Test" start
+wait_for 'grep -q "the cluster is up" /tmp/entry.out' 40
+check "0x6 is answered with a fresh install, once" "1" "$(grep -c 'updating as a new install' /tmp/entry.out)"
+check "the server came up on the new build" "101" "$(sed -n 's/.*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' "${FLUX_SERVER_DIR}/steamapps/appmanifest_343050.acf" | head -1)"
+check "the old record is not left behind" "1" "$(status test -e "${FLUX_SERVER_DIR}/steamapps/appmanifest_343050.acf.pre-fresh")"
+check "the depotcache is on the install volume" "${FLUX_SERVER_DIR}/flux-steam/depotcache" "$(readlink "${HOME:-/root}/.local/share/Steam/depotcache")"
+kill -TERM "${entry}"; wait "${entry}"
+rm -f /tmp/fake-0x6 /tmp/fake-latest-build
 
 # --- flux.log is local; the banner ----------------------------------------------------------------
 fl="${FLUX_SERVER_DIR}/flux-logs/flux.log"

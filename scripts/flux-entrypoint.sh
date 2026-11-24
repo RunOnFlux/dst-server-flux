@@ -115,27 +115,59 @@ term_handler() {
 trap term_handler TERM INT
 
 update_server() {
-  local attempt validate
+  local attempt validate steam_home steam_rc fresh=0 acf="${s}/steamapps/appmanifest_${FLUX_STEAM_APP}.acf"
   if flux_truthy "${SKIP_UPDATE:-}" && [ -x "${s}/bin64/${FLUX_GAME_BIN}" ]; then
     flux_log "SKIP_UPDATE is set: not updating the server files"
     return 0
   fi
+  # SteamCMD's depotcache onto the INSTALL volume (local to the node, never synced). It holds the manifests of
+  # the installed build, which the NEXT update needs and which Steam refuses to an anonymous login once a build
+  # is old; in the container's own layer they are lost on every redeploy and the first update after it fails with
+  # "state is 0x6 after update job" (Icarus, Rust).
+  steam_home="${HOME:-/root}/.local/share/Steam"
+  mkdir -p "${s}/flux-steam/depotcache" "${steam_home}"
+  if [ ! -L "${steam_home}/depotcache" ]; then
+    [ -d "${steam_home}/depotcache" ] && cp -an "${steam_home}/depotcache/." "${s}/flux-steam/depotcache/" 2>/dev/null
+    rm -rf "${steam_home}/depotcache"
+    ln -s "${s}/flux-steam/depotcache" "${steam_home}/depotcache"
+  fi
   write_state updating "Downloading the latest Don't Starve Together server from Steam (about 4.3 GB the first time)."
   flux_log "updating the server from Steam (app ${FLUX_STEAM_APP})"
   validate=""
+  # A stop in the middle of a fresh install leaves the old build's record only as .pre-fresh.
+  [ ! -f "${acf}" ] && [ -f "${acf}.pre-fresh" ] && [ -x "${s}/bin64/${FLUX_GAME_BIN}" ] && cp -f "${acf}.pre-fresh" "${acf}"
   for attempt in 1 2 3 4 5; do
     # The platform has to be named: without it, an anonymous install of 343050 fails with
     # "Missing configuration" (measured, steamcmd/steamcmd:ubuntu-24).
     # shellcheck disable=SC2086  # validate is "" or "validate"
-    if steamcmd +@sSteamCmdForcePlatformType linux +force_install_dir "${s}" +login anonymous \
-      +app_update "${FLUX_STEAM_APP}" -beta public ${validate} +quit; then
-      [ -x "${s}/bin64/${FLUX_GAME_BIN}" ] && return 0
+    steamcmd +@sSteamCmdForcePlatformType linux +force_install_dir "${s}" +login anonymous \
+      +app_update "${FLUX_STEAM_APP}" -beta public ${validate} +quit >/tmp/steamcmd.log 2>&1 &
+    wait $!
+    steam_rc=$?
+    tail -n 30 /tmp/steamcmd.log
+    if [ "${steam_rc}" = "0" ] && [ -x "${s}/bin64/${FLUX_GAME_BIN}" ]; then
+      rm -f "${acf}.pre-fresh"
+      return 0
     fi
     [ "${terminating}" = "1" ] && return 1
-    validate="validate"
-    flux_log "WARN steamcmd failed (attempt ${attempt}/5); retrying in 5s with validate"
+    if grep -aqE "state is 0x6( |$)" /tmp/steamcmd.log && [ "${fresh}" = "0" ] && [ -f "${acf}" ]; then
+      # An update from build A to B needs A's depot manifests (the depotcache above). When they are gone Steam
+      # will NOT hand an old manifest to an anonymous login, and neither retrying nor validate gets past it:
+      # only a fresh install over the top does (the whole 4.3 GB again). Once, and only for "state is 0x6",
+      # never for a network failure, which a re-download cannot fix.
+      fresh=1
+      validate=""
+      [ -f "${acf}.pre-fresh" ] || cp -f "${acf}" "${acf}.pre-fresh"
+      rm -rf "${acf}" "${s}/steamapps/downloading" "${s}/steamapps/temp"
+      flux_log "WARN Steam no longer serves the installed build's manifests; updating as a new install"
+    else
+      validate="validate"
+    fi
+    flux_log "WARN steamcmd failed (attempt ${attempt}/5); retrying in 5s${validate:+ with validate}"
     sleep 5
   done
+  # The fresh install did not finish: put the old build's record back.
+  [ "${fresh}" = "1" ] && [ -f "${acf}.pre-fresh" ] && cp -f "${acf}.pre-fresh" "${acf}"
   if [ -x "${s}/bin64/${FLUX_GAME_BIN}" ]; then
     flux_log "WARN could not update from Steam; starting the build already installed"
     return 0
