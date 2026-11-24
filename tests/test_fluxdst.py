@@ -254,6 +254,21 @@ class Mods(Base):
         self.assertEqual(ids, ["378160973", "42"])
         self.assertIn("'nope'", out.getvalue())
 
+    def test_mods_reports_the_cached_items_of_the_collection_without_asking_steam(self):
+        self.write("flux/collection-999.json", json.dumps(["555", "556"]))
+        rc, out, _ = self.run_cmd({"DST_MOD_COLLECTION": "999", "DST_MODS": "111"}, "mods")
+        self.assertEqual(rc, 0, out)
+        data = json.loads(out)
+        self.assertEqual(data["collection_items"], ["555", "556"])
+        self.assertEqual(data["env_mods"], ["111"])
+        rc, out, _ = self.run_cmd({}, "mods")
+        self.assertIsNone(json.loads(out)["collection_items"])
+        # a saved mods.json with an empty collection: the image still uses the Deployment Settings one
+        self.write("flux/mods.json", json.dumps({"mods": [], "collection": ""}))
+        rc, out, _ = self.run_cmd({"DST_MOD_COLLECTION": "999"}, "mods")
+        data = json.loads(out)
+        self.assertEqual((data["config"]["managed"], data["config"]["collection"], data["collection_items"]), (True, "", ["555", "556"]))
+
     def test_set_mods_validates(self):
         rc, out, _ = self.run_cmd({}, "set-mods", json.dumps({"mods": [{"id": "abc"}], "collection": "x"}))
         self.assertEqual(rc, 2)

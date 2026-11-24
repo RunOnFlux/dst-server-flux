@@ -64,6 +64,14 @@ if [ "${info}" = "1" ]; then
   exit 0
 fi
 [ -n "${dir}" ] || exit 0
+# /tmp/fake-0x6: Steam refuses the installed build's old manifests while its record (the acf) exists
+if [ -e /tmp/fake-0x6 ] && [ -f "${dir}/steamapps/appmanifest_343050.acf" ]; then
+  echo "Error! App '343050' state is 0x6 after update job."
+  exit "$(cat /tmp/fake-0x6)"
+fi
+echo "steamcmd: starting"
+if [ -e /tmp/fake-fail-once ]; then rm -f /tmp/fake-fail-once; echo "steamcmd: failing once"; exit 1; fi
+[ -e /tmp/fake-slow ] && sleep 30
 echo "steamcmd: installing build ${build}"
 mkdir -p "${dir}/bin64" "${dir}/steamapps" "${dir}/mods"
 echo 756039 >"${dir}/version.txt"
@@ -218,6 +226,70 @@ check "the restart is planned" "0" "$(status grep -q "planned: scheduled restart
 check "a scheduled restart is not a crash" "1" "$(status grep -q 'restarts within' /tmp/entry.out)"
 wait_for 'grep -c "the cluster is up" /tmp/entry.out | grep -q 2' 30
 check "both shards are back" "2" "$(pgrep -fc '^\./dontstarve_dedicated_server_nullrenderer_x64')"
+kill -TERM "${entry}"; wait "${entry}"
+
+# 5. Steam refuses the installed build's manifests (0x6): the record is set aside, the install runs as a new
+# one, the server starts, and the depotcache lives on the install volume.
+rm -rf /tmp/t
+FLUX_OFFLINE=true DST_NAME="Test" start
+wait_for 'grep -c "the cluster is up" /tmp/entry.out | grep -q 1' 30
+kill -TERM "${entry}"; wait "${entry}"
+echo 8 >/tmp/fake-0x6
+echo 101 >/tmp/fake-latest-build
+FLUX_OFFLINE=true DST_NAME="Test" start
+wait_for 'grep -q "the cluster is up" /tmp/entry.out' 40
+check "0x6 is answered with a fresh install, once" "1" "$(grep -c 'updating as a new install' /tmp/entry.out)"
+check "the server came up on the new build" "101" "$(sed -n 's/.*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' "${FLUX_SERVER_DIR}/steamapps/appmanifest_343050.acf" | head -1)"
+check "the old record is not left behind" "1" "$(status test -e "${FLUX_SERVER_DIR}/steamapps/appmanifest_343050.acf.pre-fresh")"
+check "the depotcache is on the install volume" "${FLUX_SERVER_DIR}/flux-steam/depotcache" "$(readlink "${HOME:-/root}/.local/share/Steam/depotcache")"
+kill -TERM "${entry}"; wait "${entry}"
+# the same, when SteamCMD prints the 0x6 line but exits 0 (the old build's binary is there: it must not start)
+rm -rf /tmp/t
+FLUX_OFFLINE=true DST_NAME="Test" start
+wait_for 'grep -c "the cluster is up" /tmp/entry.out | grep -q 1' 30
+kill -TERM "${entry}"; wait "${entry}"
+echo 0 >/tmp/fake-0x6
+echo 102 >/tmp/fake-latest-build
+FLUX_OFFLINE=true DST_NAME="Test" start
+wait_for 'grep -q "the cluster is up" /tmp/entry.out' 40
+check "0x6 with exit 0 is answered with a fresh install too" "1" "$(grep -c 'updating as a new install' /tmp/entry.out)"
+check "and the server came up on the newest build" "102" "$(sed -n 's/.*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' "${FLUX_SERVER_DIR}/steamapps/appmanifest_343050.acf" | head -1)"
+kill -TERM "${entry}"; wait "${entry}"
+rm -f /tmp/fake-0x6 /tmp/fake-latest-build
+
+# 6. A stop in the middle of the update is a clean stop (exit 0), not a failed preparation (42), and the
+# SteamCMD output reaches the container's output while it runs.
+rm -rf /tmp/t
+touch /tmp/fake-slow
+FLUX_OFFLINE=true DST_NAME="Test" start
+sleep 3
+# SteamCMD is still sleeping here: its first line must already be in the container's output (live, not at the end)
+check "SteamCMD's output reaches the container's output while it is still running" "0" "$(status grep -q 'steamcmd: starting' /tmp/entry.out)"
+kill -TERM "${entry}"
+wait "${entry}"
+rc=$?
+check "a stop during the update ends the container with 0" "0" "${rc}"
+check "and is logged as a stop, not as an error" "0" "$(status grep -q 'stopped on request before the server started' /tmp/entry.out)"
+check "the container did not end with 42" "1" "$(status grep -q 'ending the container (42)' /tmp/entry.out)"
+rm -f /tmp/fake-slow
+pkill -f "sleep 30" 2>/dev/null
+# a stop during the pause between two attempts must not start another SteamCMD run
+rm -rf /tmp/t
+touch /tmp/fake-fail-once /tmp/fake-slow
+FLUX_OFFLINE=true DST_NAME="Test" start
+wait_for 'grep -q "retrying in 5s" /tmp/entry.out' 20
+t0="$(date +%s)"
+kill -TERM "${entry}"
+wait "${entry}"
+check "a stop between two attempts ends the container with 0" "0" "$?"
+check "quickly, without a second SteamCMD run" "0" "$(status test $(($(date +%s) - t0)) -lt 4)"
+check "(one 'steamcmd: starting' in the output)" "1" "$(grep -c 'steamcmd: starting' /tmp/entry.out)"
+rm -f /tmp/fake-slow /tmp/fake-fail-once
+pkill -f "sleep 30" 2>/dev/null
+rm -rf /tmp/t
+FLUX_OFFLINE=true DST_NAME="Test" start
+wait_for 'grep -q "the cluster is up" /tmp/entry.out' 30
+check "SteamCMD's whole output is in the container's output" "0" "$(status grep -q 'steamcmd: installing build' /tmp/entry.out)"
 kill -TERM "${entry}"; wait "${entry}"
 
 # --- flux.log is local; the banner ----------------------------------------------------------------

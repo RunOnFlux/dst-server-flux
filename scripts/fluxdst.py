@@ -984,9 +984,19 @@ def current_mods():
     return {"managed": False, "mods": mods, "collection": collection}
 
 
+def cached_collection_items(collection):
+    """The items of a collection from the list apply_mods cached on its last start, or None. Never asks Steam:
+    the hub reads `mods` while a tab opens, and only needs to tell a collection's mods from the owner's own."""
+    cached = read_json(os.path.join(FLUX_DIR, f"collection-{collection}.json")) if collection else None
+    return [str(i) for i in cached] if isinstance(cached, list) else None
+
+
 def cmd_mods():
-    print(json.dumps({"config": current_mods(), "installed": (read_json(INSTALLED_JSON, {}) or {}).get("mods", {}),
-                      "env_mods": split_ids(env("DST_MODS") or "", "DST_MODS")}))
+    config = current_mods()
+    print(json.dumps({"config": config, "installed": (read_json(INSTALLED_JSON, {}) or {}).get("mods", {}),
+                      "env_mods": split_ids(env("DST_MODS") or "", "DST_MODS"),
+                      # the collection the image actually uses: the saved one, else Deployment Settings'
+                      "collection_items": cached_collection_items(config.get("collection") or ((split_ids(env("DST_MOD_COLLECTION", "MOD_COLLECTION") or "", "DST_MOD_COLLECTION") or [""])[0]))}))
     return 0
 
 
