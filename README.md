@@ -145,7 +145,7 @@ docker run --rm -e FLUX_OFFLINE=true -v dst-install:/mnt/dst/server -v dst-data:
 
 ## Versions
 
-- **1.0.4**: SteamCMD's depotcache lives on the install volume (`flux-steam/depotcache`, local, never synced), and when an update fails with `state is 0x6 after update job` (Steam no longer serves the installed build's manifests to an anonymous login: seen on Icarus and Rust) the build's record is set aside once and the update runs as a new install (the whole 4.3 GB again), the old record put back if that fails too. Tested with a stand-in SteamCMD; not yet seen on a real DST node.
+- **1.0.4**: SteamCMD's depotcache lives on the install volume (`flux-steam/depotcache`, local, never synced), and when an update fails with `state is 0x6 after update job` (Steam no longer serves the installed build's manifests to an anonymous login: seen on Icarus and Rust) the build's record is set aside once and the update runs as a new install (the whole 4.3 GB again), the old record put back if that fails too. Tested with a stand-in SteamCMD (exit 8 and exit 0 with the 0x6 line); not seen against real Steam. After a real install the depotcache directory was EMPTY (SteamCMD wrote no manifest there), so the symlink is unproven: the fresh-install fallback is what handles 0x6.
 - **1.0.3** (2026-11-07): a daily scheduled restart, `FLUX_RESTART_TIME` ("HH:MM" in `TZ`; empty or unset = off, so
   existing servers do not change). Players are warned with `c_announce` `FLUX_RESTART_WARN_MINUTES` (5) before and again one
   minute before; both worlds are saved and the next start updates from Steam. It is a planned restart, not counted

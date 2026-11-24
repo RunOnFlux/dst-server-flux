@@ -156,7 +156,9 @@ update_server() {
       return 1
     fi
     wait "${tail_pid}" 2>/dev/null
-    if [ "${steam_rc}" = "0" ] && [ -x "${s}/bin64/${FLUX_GAME_BIN}" ]; then
+    # A "state is 0x6" in the log is a failure whatever SteamCMD's exit code says: the old build's binary is
+    # still there, so a 0 exit would otherwise start the old build and the fallback below would never run.
+    if [ "${steam_rc}" = "0" ] && [ -x "${s}/bin64/${FLUX_GAME_BIN}" ] && ! grep -aqE "state is 0x6( |$)" /tmp/steamcmd.log; then
       rm -f "${acf}.pre-fresh"
       return 0
     fi

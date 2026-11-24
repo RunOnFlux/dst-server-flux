@@ -67,7 +67,7 @@ fi
 # /tmp/fake-0x6: Steam refuses the installed build's old manifests while its record (the acf) exists
 if [ -e /tmp/fake-0x6 ] && [ -f "${dir}/steamapps/appmanifest_343050.acf" ]; then
   echo "Error! App '343050' state is 0x6 after update job."
-  exit 8
+  exit "$(cat /tmp/fake-0x6)"
 fi
 [ -e /tmp/fake-slow ] && sleep 30
 echo "steamcmd: installing build ${build}"
@@ -232,7 +232,7 @@ rm -rf /tmp/t
 FLUX_OFFLINE=true DST_NAME="Test" start
 wait_for 'grep -c "the cluster is up" /tmp/entry.out | grep -q 1' 30
 kill -TERM "${entry}"; wait "${entry}"
-touch /tmp/fake-0x6
+echo 8 >/tmp/fake-0x6
 echo 101 >/tmp/fake-latest-build
 FLUX_OFFLINE=true DST_NAME="Test" start
 wait_for 'grep -q "the cluster is up" /tmp/entry.out' 40
@@ -240,6 +240,18 @@ check "0x6 is answered with a fresh install, once" "1" "$(grep -c 'updating as a
 check "the server came up on the new build" "101" "$(sed -n 's/.*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' "${FLUX_SERVER_DIR}/steamapps/appmanifest_343050.acf" | head -1)"
 check "the old record is not left behind" "1" "$(status test -e "${FLUX_SERVER_DIR}/steamapps/appmanifest_343050.acf.pre-fresh")"
 check "the depotcache is on the install volume" "${FLUX_SERVER_DIR}/flux-steam/depotcache" "$(readlink "${HOME:-/root}/.local/share/Steam/depotcache")"
+kill -TERM "${entry}"; wait "${entry}"
+# the same, when SteamCMD prints the 0x6 line but exits 0 (the old build's binary is there: it must not start)
+rm -rf /tmp/t
+FLUX_OFFLINE=true DST_NAME="Test" start
+wait_for 'grep -c "the cluster is up" /tmp/entry.out | grep -q 1' 30
+kill -TERM "${entry}"; wait "${entry}"
+echo 0 >/tmp/fake-0x6
+echo 102 >/tmp/fake-latest-build
+FLUX_OFFLINE=true DST_NAME="Test" start
+wait_for 'grep -q "the cluster is up" /tmp/entry.out' 40
+check "0x6 with exit 0 is answered with a fresh install too" "1" "$(grep -c 'updating as a new install' /tmp/entry.out)"
+check "and the server came up on the newest build" "102" "$(sed -n 's/.*"buildid"[[:space:]]*"\([0-9]*\)".*/\1/p' "${FLUX_SERVER_DIR}/steamapps/appmanifest_343050.acf" | head -1)"
 kill -TERM "${entry}"; wait "${entry}"
 rm -f /tmp/fake-0x6 /tmp/fake-latest-build
 
