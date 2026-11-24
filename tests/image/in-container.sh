@@ -69,6 +69,7 @@ if [ -e /tmp/fake-0x6 ] && [ -f "${dir}/steamapps/appmanifest_343050.acf" ]; the
   echo "Error! App '343050' state is 0x6 after update job."
   exit 8
 fi
+[ -e /tmp/fake-slow ] && sleep 30
 echo "steamcmd: installing build ${build}"
 mkdir -p "${dir}/bin64" "${dir}/steamapps" "${dir}/mods"
 echo 756039 >"${dir}/version.txt"
@@ -241,6 +242,26 @@ check "the old record is not left behind" "1" "$(status test -e "${FLUX_SERVER_D
 check "the depotcache is on the install volume" "${FLUX_SERVER_DIR}/flux-steam/depotcache" "$(readlink "${HOME:-/root}/.local/share/Steam/depotcache")"
 kill -TERM "${entry}"; wait "${entry}"
 rm -f /tmp/fake-0x6 /tmp/fake-latest-build
+
+# 6. A stop in the middle of the update is a clean stop (exit 0), not a failed preparation (42), and the
+# SteamCMD output reaches the container's output while it runs.
+rm -rf /tmp/t
+touch /tmp/fake-slow
+FLUX_OFFLINE=true DST_NAME="Test" start
+sleep 3
+kill -TERM "${entry}"
+wait "${entry}"
+rc=$?
+check "a stop during the update ends the container with 0" "0" "${rc}"
+check "and is logged as a stop, not as an error" "0" "$(status grep -q 'stopped on request before the server started' /tmp/entry.out)"
+check "the container did not end with 42" "1" "$(status grep -q 'ending the container (42)' /tmp/entry.out)"
+rm -f /tmp/fake-slow
+pkill -f "sleep 30" 2>/dev/null
+rm -rf /tmp/t
+FLUX_OFFLINE=true DST_NAME="Test" start
+wait_for 'grep -q "the cluster is up" /tmp/entry.out' 30
+check "SteamCMD's output is in the container's output" "0" "$(status grep -q 'steamcmd: installing build' /tmp/entry.out)"
+kill -TERM "${entry}"; wait "${entry}"
 
 # --- flux.log is local; the banner ----------------------------------------------------------------
 fl="${FLUX_SERVER_DIR}/flux-logs/flux.log"

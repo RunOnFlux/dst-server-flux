@@ -115,7 +115,7 @@ term_handler() {
 trap term_handler TERM INT
 
 update_server() {
-  local attempt validate steam_home steam_rc fresh=0 acf="${s}/steamapps/appmanifest_${FLUX_STEAM_APP}.acf"
+  local attempt validate steam_home steam_rc steam_pid tail_pid fresh=0 acf="${s}/steamapps/appmanifest_${FLUX_STEAM_APP}.acf"
   if flux_truthy "${SKIP_UPDATE:-}" && [ -x "${s}/bin64/${FLUX_GAME_BIN}" ]; then
     flux_log "SKIP_UPDATE is set: not updating the server files"
     return 0
@@ -140,11 +140,22 @@ update_server() {
     # The platform has to be named: without it, an anonymous install of 343050 fails with
     # "Missing configuration" (measured, steamcmd/steamcmd:ubuntu-24).
     # shellcheck disable=SC2086  # validate is "" or "validate"
+    # The log is a file (the 0x6 check reads it); a tail that ends with SteamCMD (after reading to its end) shows
+    # it live in the container's output, as before.
+    : >/tmp/steamcmd.log
     steamcmd +@sSteamCmdForcePlatformType linux +force_install_dir "${s}" +login anonymous \
       +app_update "${FLUX_STEAM_APP}" -beta public ${validate} +quit >/tmp/steamcmd.log 2>&1 &
-    wait $!
+    steam_pid=$!
+    tail -n +1 -f --pid="${steam_pid}" /tmp/steamcmd.log &
+    tail_pid=$!
+    wait "${steam_pid}"
     steam_rc=$?
-    tail -n 30 /tmp/steamcmd.log
+    if [ "${terminating}" = "1" ]; then
+      # A stop during the download: SteamCMD is ended with it (Docker waits 10 s), the next start resumes.
+      kill "${steam_pid}" "${tail_pid}" 2>/dev/null
+      return 1
+    fi
+    wait "${tail_pid}" 2>/dev/null
     if [ "${steam_rc}" = "0" ] && [ -x "${s}/bin64/${FLUX_GAME_BIN}" ]; then
       rm -f "${acf}.pre-fresh"
       return 0
@@ -389,7 +400,8 @@ start_generation() {
   stopping=0
   rm -f "${FLUX_RESTART_MARKER}"
 
-  update_server || return 1
+  # A stop during the update is a clean stop (2), not a failed preparation (1: the container would end with 42).
+  update_server || { [ "${terminating}" = "1" ] && return 2; return 1; }
   [ "${terminating}" = "1" ] && return 2
   "${PY[@]}" migrate 2>&1 | while IFS= read -r line; do flux_log "${line}"; done
   local out
