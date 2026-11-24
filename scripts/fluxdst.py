@@ -995,7 +995,8 @@ def cmd_mods():
     config = current_mods()
     print(json.dumps({"config": config, "installed": (read_json(INSTALLED_JSON, {}) or {}).get("mods", {}),
                       "env_mods": split_ids(env("DST_MODS") or "", "DST_MODS"),
-                      "collection_items": cached_collection_items(config.get("collection"))}))
+                      # the collection the image actually uses: the saved one, else Deployment Settings'
+                      "collection_items": cached_collection_items(config.get("collection") or ((split_ids(env("DST_MOD_COLLECTION", "MOD_COLLECTION") or "", "DST_MOD_COLLECTION") or [""])[0]))}))
     return 0
 
 

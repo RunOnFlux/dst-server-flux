@@ -263,6 +263,11 @@ class Mods(Base):
         self.assertEqual(data["env_mods"], ["111"])
         rc, out, _ = self.run_cmd({}, "mods")
         self.assertIsNone(json.loads(out)["collection_items"])
+        # a saved mods.json with an empty collection: the image still uses the Deployment Settings one
+        self.write("flux/mods.json", json.dumps({"mods": [], "collection": ""}))
+        rc, out, _ = self.run_cmd({"DST_MOD_COLLECTION": "999"}, "mods")
+        data = json.loads(out)
+        self.assertEqual((data["config"]["managed"], data["config"]["collection"], data["collection_items"]), (True, "", ["555", "556"]))
 
     def test_set_mods_validates(self):
         rc, out, _ = self.run_cmd({}, "set-mods", json.dumps({"mods": [{"id": "abc"}], "collection": "x"}))
