@@ -263,11 +263,12 @@ rm -rf /tmp/t
 touch /tmp/fake-slow
 FLUX_OFFLINE=true DST_NAME="Test" start
 sleep 3
+# SteamCMD is still sleeping here: its first line must already be in the container's output (live, not at the end)
+check "SteamCMD's output reaches the container's output while it is still running" "0" "$(status grep -q 'steamcmd: starting' /tmp/entry.out)"
 kill -TERM "${entry}"
 wait "${entry}"
 rc=$?
 check "a stop during the update ends the container with 0" "0" "${rc}"
-check "SteamCMD's output reached the container's output while it was still running" "0" "$(status grep -q 'steamcmd: starting' /tmp/entry.out)"
 check "and is logged as a stop, not as an error" "0" "$(status grep -q 'stopped on request before the server started' /tmp/entry.out)"
 check "the container did not end with 42" "1" "$(status grep -q 'ending the container (42)' /tmp/entry.out)"
 rm -f /tmp/fake-slow
